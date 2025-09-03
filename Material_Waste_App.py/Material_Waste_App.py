@@ -45,17 +45,6 @@ if __name__ == '__main__':
 # - "Employee/Operator ID" -> "Operator Initial/date"
 # - Shift list updated per request
 
-import streamlit as st
-import pandas as pd
-import altair as alt
-from datetime import datetime, date, timedelta
-from pathlib import Path
-from uuid import uuid4
-import hashlib
-import re
-import smtplib
-from email.message import EmailMessage
-
 # Material_Waste_App.py
 # Material Waste Tracker — Scan-Free Edition
 # Includes:
