@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Streamlit
+.streamlit/
+
+# Local data (don’t upload your CSVs/images)
+waste_logs/
