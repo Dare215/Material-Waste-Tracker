@@ -1,15 +1,38 @@
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-def flag_anomalies(df: pd.DataFrame, contamination: float = 0.03, random_state: int = 42):
-    use = df.copy()
-    use["qty_f"]  = use["qty"].fillna(0).clip(lower=0)
-    use["cost_f"] = use["cost"].fillna(0).clip(lower=0)
-    X = use[["qty_f","cost_f"]].values
-    iso = IsolationForest(contamination=contamination, random_state=random_state)
-    labels = iso.fit_predict(X)
-    scores = iso.decision_function(X)
-    df["ai_anomaly"] = (labels == -1)
+def flag_anomalies(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """
+    Detect waste anomalies using IsolationForest.
+    Adds ai_score, ai_anomaly (bool), and ai_waste_flag columns.
+    Returns (dataframe_with_flags, metadata)
+    """
+    df = df.copy()
+    if df.empty:
+        return df, {"message": "No data to analyze"}
+
+    # --- numeric columns ---
+    num_cols = [c for c in ["qty", "cost"] if c in df.columns]
+    if not num_cols:
+        return df, {"message": "No numeric columns found"}
+
+    # fill missing numeric
+    df[num_cols] = df[num_cols].fillna(0.0)
+    X = df[num_cols].to_numpy()
+
+    # --- model ---
+    model = IsolationForest(contamination=0.05, random_state=42)
+    model.fit(X)
+    scores = model.decision_function(X)
+    preds = model.predict(X)
+
     df["ai_score"] = scores
-    df["ai_waste_flag"] = df["ai_anomaly"] & (df["cost_f"] > df["cost_f"].median())
-    return df, {"model":"IsolationForest","contamination":contamination}
+    df["ai_anomaly"] = preds == -1
+    df["ai_waste_flag"] = df["ai_anomaly"].apply(lambda x: "🚨 Waste Risk" if x else "✅ Normal")
+
+    metadata = {
+        "n_records": len(df),
+        "n_anomalies": int(df["ai_anomaly"].sum()),
+        "contamination": 0.05,
+    }
+    return df, metadata
