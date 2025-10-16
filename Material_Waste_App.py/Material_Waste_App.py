@@ -65,14 +65,21 @@ import hashlib
 import re
 import smtplib
 from email.message import EmailMessage
+import sys  # <-- added
 
-# === AI imports (added) ===
+# --- Add src/ to Python path so Streamlit Cloud can find your modules ---
+ROOT = Path(__file__).parent.resolve()
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+# -----------------------------------------------------------------------
+
+# === AI imports (after path fix) ===
 from src.ai.anomaly import flag_anomalies
 from src.ai.duplicates import detect_duplicates_and_subs
 from src.ai.categorize import categorize_basic
 from src.ai.trends import aggregate_timeseries, naive_forecast
 from src.ai.reports import generate_all_reports
-# ==========================
+# ===================================
 
 st.set_page_config(page_title="Material Waste Tracker", page_icon="♻️", layout="wide")
 
