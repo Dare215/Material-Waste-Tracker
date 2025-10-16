@@ -65,13 +65,15 @@ import hashlib
 import re
 import smtplib
 from email.message import EmailMessage
-import sys  # <-- added
+import sys
 
-# --- Add src/ to Python path so Streamlit Cloud can find your modules ---
-ROOT = Path(__file__).parent.resolve()
-if str(ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(ROOT / "src"))
-# -----------------------------------------------------------------------
+# --- Robust path setup so Streamlit Cloud finds src/ modules ---
+_THIS_FILE = Path(__file__).resolve()
+for base in {_THIS_FILE.parent, _THIS_FILE.parent.parent, Path.cwd()}:
+    cand = base / "src"
+    if cand.exists() and str(cand) not in sys.path:
+        sys.path.insert(0, str(cand))
+# ----------------------------------------------------------------
 
 # === AI imports (after path fix) ===
 from src.ai.anomaly import flag_anomalies
