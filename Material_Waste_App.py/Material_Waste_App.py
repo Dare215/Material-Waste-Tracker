@@ -66,6 +66,14 @@ import re
 import smtplib
 from email.message import EmailMessage
 
+# === AI imports (added) ===
+from src.ai.anomaly import flag_anomalies
+from src.ai.duplicates import detect_duplicates_and_subs
+from src.ai.categorize import categorize_basic
+from src.ai.trends import aggregate_timeseries, naive_forecast
+from src.ai.reports import generate_all_reports
+# ==========================
+
 st.set_page_config(page_title="Material Waste Tracker", page_icon="♻️", layout="wide")
 
 # ------------------------- Paths -------------------------
@@ -353,9 +361,9 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 filtered = apply_filters(master_df)
 
-# Tabs
-tab_log, tab_trends, tab_materials, tab_reasons, tab_cost, tab_suites, tab_compliance, tab_exports = st.tabs(
-    ["📝 Log", "📈 Trends", "📦 Materials", "🧭 Reasons", "💲 Cost (Managers)", "🏢 Suites", "🔒 Compliance", "📤 Exports"]
+# Tabs (AI tab inserted)
+tab_log, tab_trends, tab_ai, tab_materials, tab_reasons, tab_cost, tab_suites, tab_compliance, tab_exports = st.tabs(
+    ["📝 Log", "📈 Trends", "🤖 AI (Starter)", "📦 Materials", "🧭 Reasons", "💲 Cost (Managers)", "🏢 Suites", "🔒 Compliance", "📤 Exports"]
 )
 
 # LOG
@@ -485,6 +493,86 @@ with tab_trends:
             tooltip=["shift","quantity"]
         ).properties(height=260)
         st.altair_chart(shift_bar, use_container_width=True)
+
+# AI (Starter)
+with tab_ai:
+    st.subheader("🤖 AI (Starter)")
+    if filtered.empty:
+        st.info("No data within current filters. Add logs or widen the date range.")
+    else:
+        # --- Build canonical AI frame from your schema ---
+        df_ai = filtered.copy()
+        df_ai["date"] = pd.to_datetime(df_ai["timestamp_local"], errors="coerce")
+        df_ai["qty"] = pd.to_numeric(df_ai["quantity"], errors="coerce").fillna(0)
+        df_ai["cost"] = pd.to_numeric(df_ai["total_cost"], errors="coerce").fillna(0)
+        # No explicit vendor field available; use material as a proxy for duplicate/subscription heuristics
+        df_ai["vendor"] = df_ai["material"].astype(str)
+        df_ai["description"] = df_ai["reason"].fillna("")
+        base_cols = ["date", "suite", "material", "vendor", "qty", "cost", "description"]
+        df_ai = df_ai[base_cols].dropna(subset=["date"]).reset_index(drop=True)
+
+        # 1) Anomaly / waste detection
+        st.markdown("### AI-Powered Waste Detection")
+        df_ano, _meta = flag_anomalies(df_ai)
+        st.dataframe(
+            df_ano[["date","suite","material","qty","cost","ai_anomaly","ai_score","ai_waste_flag"]],
+            use_container_width=True
+        )
+        st.download_button("⬇️ Download with AI flags (CSV)", df_ano.to_csv(index=False), "ai_flags.csv")
+
+        # 2) Duplicate & subscription-like patterns
+        st.markdown("### Duplicate Expenses & Subscription-like Patterns")
+        dups = detect_duplicates_and_subs(df_ano)
+        st.dataframe(dups, use_container_width=True)
+
+        # merge subscription flag back (for reports)
+        merge_cols = ["date","vendor","cost"]
+        dups_merge = dups[merge_cols + ["subscription_like"]].copy()
+        df_for_reports = df_ano.merge(dups_merge, on=merge_cols, how="left")
+        df_for_reports["subscription_like"] = df_for_reports["subscription_like"].fillna(False)
+
+        # 3) Basic categorization
+        st.markdown("### AI Category Analysis")
+        cat_df, _ = categorize_basic(df_ano)
+        st.dataframe(
+            cat_df[["date","vendor","description","cost","ai_category","ai_category_source"]],
+            use_container_width=True
+        )
+
+        # 4) Trends & simple forecast
+        st.markdown("### Spending Trends & Basic Forecast")
+        monthly = aggregate_timeseries(df_ano)
+        st.line_chart(monthly[["cost","cost_ma3"]])
+        fcst = naive_forecast(monthly, periods=3)
+        st.write("**Next 3 months forecast (naive moving-average):**")
+        st.dataframe(fcst, use_container_width=True)
+
+        # 5) Reports: Weekly / Monthly / Quarterly / Annual
+        st.markdown("### AI Reports & Insights (Weekly • Monthly • Quarterly • Annual)")
+        rep_input = df_for_reports[["date","cost","ai_anomaly","subscription_like","material","vendor"]]
+        all_reports = generate_all_reports(rep_input)
+
+        for period_name in ["Weekly", "Monthly", "Quarterly", "Annual"]:
+            st.markdown(f"#### {period_name} Report")
+            tbl = all_reports[period_name]["table"]
+            txt = all_reports[period_name]["text"]
+
+            if not tbl.empty:
+                st.dataframe(tbl.tail(8), use_container_width=True)
+                st.text_area(f"{period_name} Summary", txt, height=180)
+
+                st.download_button(
+                    f"⬇️ Download {period_name} Table (CSV)",
+                    tbl.to_csv().encode("utf-8"),
+                    file_name=f"{period_name.lower()}_report.csv"
+                )
+                st.download_button(
+                    f"⬇️ Download {period_name} Summary (TXT)",
+                    txt.encode("utf-8"),
+                    file_name=f"{period_name.lower()}_summary.txt"
+                )
+            else:
+                st.info(f"No data available yet for {period_name}.")
 
 # MATERIALS
 with tab_materials:
