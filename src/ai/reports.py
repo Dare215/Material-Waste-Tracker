@@ -8,10 +8,10 @@ import pandas as pd
 # ---------------------------
 
 _PERIODS = {
-    "Weekly":   "W-MON",   # week ending Monday (adjust if you prefer SUN)
-    "Monthly":  "MS",      # month start
-    "Quarterly":"QS",      # quarter start
-    "Annual":   "YS",      # year start
+    "Weekly":    "W-MON",   # week starting Monday
+    "Monthly":   "MS",      # month start
+    "Quarterly": "QS",      # quarter start
+    "Annual":    "YS",      # year start
 }
 
 def _safe_sum(x):
@@ -21,13 +21,14 @@ def _safe_sum(x):
         return 0.0
 
 def _prep(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure the frame is time-indexed and has a cost column."""
+    """Ensure the frame is time-indexed and has normalized columns we expect."""
     d = df.copy()
     if "date" not in d.columns:
         raise ValueError("Expected a 'date' column in dataframe.")
     d["date"] = pd.to_datetime(d["date"], errors="coerce")
     d = d.dropna(subset=["date"]).sort_values("date")
-    # normalize cost/qty
+
+    # normalize cost
     if "cost" not in d.columns:
         d["cost"] = 0.0
     d["cost"] = pd.to_numeric(d["cost"], errors="coerce").fillna(0.0)
@@ -48,13 +49,16 @@ def _aggregate(d: pd.DataFrame, rule: str) -> pd.DataFrame:
         anomalies=("ai_anomaly", "sum"),
         subs=("subscription_like", "sum"),
     )
-    # top drivers (cost by material/vendor if available)
+
+    # Top drivers (cost by material/vendor if available)
     if "material" in ts.columns:
         top_mat = ts.groupby([pd.Grouper(freq=rule), "material"])["cost"].sum()
-        top_mat = top_mat.groupby(level=0).nlargest(5).reset_index(level=0, drop=True)
+        # For each period, take top 5 materials by cost and join as a label
         grp["top_materials"] = (
             top_mat.groupby(level=0)
-            .apply(lambda s: ", ".join([str(k) for k in s.sort_values(ascending=False).index.get_level_values(0)[:5]]))
+            .apply(lambda s: ", ".join(
+                [idx for idx, _ in s.sort_values(ascending=False).head(5).items()]
+            ))
             .reindex(grp.index)
         )
     else:
@@ -62,10 +66,11 @@ def _aggregate(d: pd.DataFrame, rule: str) -> pd.DataFrame:
 
     if "vendor" in ts.columns:
         top_vendor = ts.groupby([pd.Grouper(freq=rule), "vendor"])["cost"].sum()
-        top_vendor = top_vendor.groupby(level=0).nlargest(5).reset_index(level=0, drop=True)
         grp["top_vendors"] = (
             top_vendor.groupby(level=0)
-            .apply(lambda s: ", ".join([str(k) for k in s.sort_values(ascending=False).index.get_level_values(0)[:5]]))
+            .apply(lambda s: ", ".join(
+                [idx for idx, _ in s.sort_values(ascending=False).head(5).items()]
+            ))
             .reindex(grp.index)
         )
     else:
@@ -75,8 +80,8 @@ def _aggregate(d: pd.DataFrame, rule: str) -> pd.DataFrame:
     return grp
 
 def _format_period_label(name: str, idx: pd.Timestamp) -> str:
+    """Human-friendly label for each period index."""
     if name == "Weekly":
-        # show week range (Mon–Sun style label)
         start = idx.normalize()
         end = (start + pd.Timedelta(days=6))
         return f"{start.date()} – {end.date()}"
@@ -90,47 +95,44 @@ def _format_period_label(name: str, idx: pd.Timestamp) -> str:
     return str(idx.date())
 
 # ---------------------------
-# Template + optional LLM
+# Fixed summary template
 # ---------------------------
 
 def _template_block(period_name: str, period_label: str, row: pd.Series) -> str:
+    """
+    Fixed (hard-coded) narrative; only metrics/labels change.
+    This text is intended to be rendered with st.code()/st.markdown in the UI
+    so users cannot edit it.
+    """
     total = float(row.get("total_cost", 0.0))
     events = int(row.get("events", 0))
     anomalies = int(row.get("anomalies", 0))
     subs = int(row.get("subs", 0))
-    top_m = row.get("top_materials", "") or "n/a"
-    top_v = row.get("top_vendors", "") or "n/a"
+    top_m = (row.get("top_materials", "") or "N/A")
+    top_v = (row.get("top_vendors", "") or "N/A")
 
     return (
-        f"{period_name} Report — {period_label}\n"
-        f"- Total recorded cost: ${total:,.0f}\n"
-        f"- Events recorded: {events}\n"
-        f"- Anomalies flagged: {anomalies}\n"
-        f"- Potential subscriptions: {subs}\n"
-        f"- Top materials (by cost): {top_m}\n"
-        f"- Top vendors (by cost): {top_v}\n"
-        "Recommendations: Review high-cost anomalies, confirm subscription-like merchants, "
-        "and enforce standardized reason codes for better root-cause analytics.\n"
-    )
+f"""{period_name} Waste Report — {period_label}
+------------------------------------------------
+Summary
+• Total recorded cost: ${total:,.2f}
+• Events recorded: {events}
+• Anomalies flagged: {anomalies}
+• Potential subscriptions: {subs}
 
-def _try_llm(summary_prompt: str) -> Optional[str]:
-    key = os.getenv("OPENAI_API_KEY")
-    if not key:
-        return None
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=key)
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a concise operations analyst."},
-                {"role": "user", "content": summary_prompt},
-            ],
-            temperature=0.2,
-        )
-        return resp.choices[0].message.content
-    except Exception:
-        return None
+Operational Notes
+• Investigate highest-cost days/materials first and document root causes in the SOP.
+• Validate anomaly flags before escalation; attach evidence to the ticket.
+• Confirm inventory/ordering adjustments prior to the next purchase cycle.
+
+Top Signals
+• Top materials (by cost): {top_m}
+• Top vendors (by cost):   {top_v}
+
+Governance
+• This is a fixed report format; narrative text is not user-editable.
+• Use for high-level review; final decisions must reference raw event logs."""
+    )
 
 # ---------------------------
 # Public APIs
@@ -140,6 +142,8 @@ def summarize_period(df: pd.DataFrame, period_name: str) -> Tuple[pd.DataFrame, 
     """
     Returns (aggregated_dataframe, concatenated_text_report) for one period.
     period_name in {'Weekly','Monthly','Quarterly','Annual'}.
+
+    The text report uses a fixed template to prevent user-edited narratives.
     """
     if period_name not in _PERIODS:
         raise ValueError(f"Unknown period '{period_name}'. Valid: {list(_PERIODS)}")
@@ -148,28 +152,13 @@ def summarize_period(df: pd.DataFrame, period_name: str) -> Tuple[pd.DataFrame, 
     rule = _PERIODS[period_name]
     agg = _aggregate(d, rule)
 
-    # Build a concise text report for each row and concatenate.
+    # Build a fixed text report for each row and concatenate.
     blocks = []
     for idx, row in agg.iterrows():
         label = _format_period_label(period_name, idx)
         blocks.append(_template_block(period_name, label, row))
 
     report_text = "\n".join(blocks)
-
-    # Optional LLM enhancement (single overall summary at top)
-    # Uses the most recent 6 rows to limit token usage.
-    recent = agg.tail(6).copy()
-    if not recent.empty:
-        md_table = recent[["total_cost", "events", "anomalies", "subs"]].to_markdown()
-        prompt = (
-            f"Create a succinct executive summary for the following {period_name.lower()} data. "
-            "Call out anomalies, subscription-like patterns, and top drivers in <=120 words.\n\n"
-            f"{md_table}"
-        )
-        llm_txt = _try_llm(prompt)
-        if llm_txt:
-            report_text = f"=== {period_name} Executive Summary ===\n{llm_txt}\n\n{report_text}"
-
     return agg, report_text
 
 def generate_all_reports(df: pd.DataFrame) -> Dict[str, Dict[str, object]]:
@@ -177,10 +166,10 @@ def generate_all_reports(df: pd.DataFrame) -> Dict[str, Dict[str, object]]:
     Generate Weekly, Monthly, Quarterly, Annual reports at once.
     Returns a dict:
     {
-      'Weekly':   {'table': DataFrame, 'text': str},
-      'Monthly':  {'table': DataFrame, 'text': str},
-      'Quarterly':{'table': DataFrame, 'text': str},
-      'Annual':   {'table': DataFrame, 'text': str},
+      'Weekly':    {'table': DataFrame, 'text': str},
+      'Monthly':   {'table': DataFrame, 'text': str},
+      'Quarterly': {'table': DataFrame, 'text': str},
+      'Annual':    {'table': DataFrame, 'text': str},
     }
     """
     outputs = {}
@@ -188,3 +177,4 @@ def generate_all_reports(df: pd.DataFrame) -> Dict[str, Dict[str, object]]:
         table, text = summarize_period(df, name)
         outputs[name] = {"table": table, "text": text}
     return outputs
+
