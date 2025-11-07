@@ -57,7 +57,7 @@ def _aggregate(d: pd.DataFrame, rule: str) -> pd.DataFrame:
         grp["top_materials"] = (
             top_mat.groupby(level=0)
             .apply(lambda s: ", ".join(
-                [idx for idx, _ in s.sort_values(ascending=False).head(5).items()]
+                [str(idx) for idx, _ in s.sort_values(ascending=False).head(5).items()]
             ))
             .reindex(grp.index)
         )
@@ -69,7 +69,7 @@ def _aggregate(d: pd.DataFrame, rule: str) -> pd.DataFrame:
         grp["top_vendors"] = (
             top_vendor.groupby(level=0)
             .apply(lambda s: ", ".join(
-                [idx for idx, _ in s.sort_values(ascending=False).head(5).items()]
+                [str(idx) for idx, _ in s.sort_values(ascending=False).head(5).items()]
             ))
             .reindex(grp.index)
         )
@@ -177,4 +177,3 @@ def generate_all_reports(df: pd.DataFrame) -> Dict[str, Dict[str, object]]:
         table, text = summarize_period(df, name)
         outputs[name] = {"table": table, "text": text}
     return outputs
-
