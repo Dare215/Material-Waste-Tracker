@@ -525,7 +525,10 @@ with tab_ai:
 
             if not tbl.empty:
                 st.dataframe(tbl.tail(8), use_container_width=True)
-                st.text_area(f"{period_name} Summary", txt, height=180)
+
+                # ⛔️ Non-editable summary (locked narrative)
+                st.subheader(f"{period_name} Summary")
+                st.code(txt, language="text")
 
                 st.download_button(
                     f"⬇️ Download {period_name} Table (CSV)",
@@ -810,3 +813,4 @@ if auto_send_monthly and manager_email and smtp_host and smtp_user and smtp_pass
                         attach_path=p
                     ):
                         LAST_EMAIL_FLAG.write_text(tag)
+
