@@ -687,9 +687,9 @@ else:
     )
 
     # LOG
-    with tab_log:
-        st.subheader("Submit a Waste Log")
-        st.caption("Enhanced for dissertation data collection: process step, operational context, severity, material category, review status, and derived time features are captured.")
+with tab_ai:
+    st.subheader("🤖 AI (Starter)")
+    st.info("AI module not yet configured.")
 
         with st.form("waste_form", clear_on_submit=True):
             c = st.columns(4)
