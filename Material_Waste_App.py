@@ -37,11 +37,11 @@ for base in {_THIS_FILE.parent, _THIS_FILE.parent.parent, Path.cwd()}:
 # ----------------------------------------------------------------
 
 # === AI imports (after path fix) ===
-from src.ai.anomaly import flag_anomalies
-from src.ai.duplicates import detect_duplicates_and_subs
-from src.ai.categorize import categorize_basic
-from src.ai.trends import aggregate_timeseries, naive_forecast
-from src.ai.reports import generate_all_reports
+# from src.ai.anomaly import flag_anomalies
+# from src.ai.duplicates import detect_duplicates_and_subs
+# from src.ai.categorize import categorize_basic
+# from src.ai.trends import aggregate_timeseries, naive_forecast
+# from src.ai.reports import generate_all_reports
 # ===================================
 
 st.set_page_config(page_title="Material Waste Tracker", page_icon="♻️", layout="wide")
